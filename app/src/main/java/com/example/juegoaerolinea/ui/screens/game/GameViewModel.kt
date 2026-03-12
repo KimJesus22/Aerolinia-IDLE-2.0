@@ -25,12 +25,24 @@ import kotlin.math.sqrt
 
 // === ESTADOS SEPARADOS POR FRECUENCIA ===
 
-/** Alta frecuencia — cambia cada frame (personaje, avión, bonos) */
+/** Avión decorativo volando */
+data class FlyingPlane(
+    val x: Float,
+    val y: Float,
+    val speed: Float,
+    val scale: Float
+)
+
+/** Alta frecuencia — cambia cada frame (personaje, aviones, bonos) */
 data class DynamicState(
     val character: CharacterState = CharacterState(x = 500f, y = 500f, targetX = 500f, targetY = 500f),
-    val airplaneX: Float = -100f,
+    val flyingPlanes: List<FlyingPlane> = listOf(
+        FlyingPlane(-100f, 80f, 180f, 0.7f),
+        FlyingPlane(-300f, 160f, 120f, 0.5f),
+        FlyingPlane(-500f, 50f, 220f, 0.9f)
+    ),
     val floatingBonuses: List<FloatingBonus> = emptyList(),
-    val bonusProgress: Float = 0f // 0..1 progreso hacia el próximo bono
+    val bonusProgress: Float = 0f
 )
 
 /** Media frecuencia — cambia con income ticks (~1/seg visible) */
@@ -69,7 +81,6 @@ class GameViewModel(
     companion object {
         private const val TAG = "GAME_DEBUG"
         private const val CHAR_SPEED = 300f
-        private const val AIRPLANE_SPEED = 240f
         private const val BONUS_INTERVAL = 8f
         private const val SAVE_INTERVAL = 30f
     }
@@ -130,16 +141,16 @@ class GameViewModel(
     fun updateGame(deltaTime: Float) {
         val dt = deltaTime.coerceAtMost(0.1f)
 
-        // Alta frecuencia: personaje + avión + progreso de bono
+        // Alta frecuencia: personaje + aviones + progreso de bono
         _dynamicState.update { dyn ->
             val newChar = moveCharacter(dyn.character, dt)
-            val newPlaneX = let {
-                val x = dyn.airplaneX + AIRPLANE_SPEED * dt
-                if (x > 1200f) -100f else x
+            val newPlanes = dyn.flyingPlanes.map { plane ->
+                val newX = plane.x + plane.speed * dt
+                if (newX > 1300f) plane.copy(x = -150f) else plane.copy(x = newX)
             }
             dyn.copy(
                 character = newChar,
-                airplaneX = newPlaneX,
+                flyingPlanes = newPlanes,
                 bonusProgress = (bonusTimer / BONUS_INTERVAL).coerceIn(0f, 1f)
             )
         }

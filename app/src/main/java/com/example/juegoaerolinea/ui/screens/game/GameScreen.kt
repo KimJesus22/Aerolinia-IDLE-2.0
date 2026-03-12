@@ -105,7 +105,7 @@ fun GameScreen(
             characterState = dynamic.character,
             stations = building.stations,
             floatingBonuses = dynamic.floatingBonuses,
-            airplaneX = dynamic.airplaneX,
+            flyingPlanes = dynamic.flyingPlanes,
             bonusProgress = dynamic.bonusProgress,
             textMeasurer = textMeasurer,
             onMapTap = { x, y -> viewModel.onMapClicked(x, y) },
