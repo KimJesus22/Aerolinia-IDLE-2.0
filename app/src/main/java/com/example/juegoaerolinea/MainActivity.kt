@@ -1,5 +1,6 @@
 package com.example.juegoaerolinea
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,6 +21,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Solicitar 60 FPS estables (evitar 120Hz que consume más batería)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val preferred = display?.supportedModes
+                ?.filter { it.refreshRate >= 59f && it.refreshRate <= 61f }
+                ?.maxByOrNull { it.refreshRate }
+            if (preferred != null) {
+                val params = window.attributes
+                params.preferredDisplayModeId = preferred.modeId
+                window.attributes = params
+            }
+        }
+
         setContent {
             JuegoAerolineaTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

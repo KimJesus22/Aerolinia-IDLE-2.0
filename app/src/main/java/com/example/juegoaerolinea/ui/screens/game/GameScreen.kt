@@ -1,6 +1,8 @@
 package com.example.juegoaerolinea.ui.screens.game
 
 import android.util.Log
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -45,17 +48,22 @@ fun GameScreen(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    // === RECOGER CADA FLOW SEPARADO (minimiza recomposiciones) ===
+    val dynamic by viewModel.dynamicState.collectAsState()     // Alta freq: personaje, avión, bonos
+    val economy by viewModel.economyState.collectAsState()     // Media freq: dinero, $/s
+    val building by viewModel.buildingState.collectAsState()   // Baja freq: estaciones, upgrades, prestigio
+    val uiFlags by viewModel.uiFlags.collectAsState()          // Flags UI
+
     val textMeasurer = rememberTextMeasurer()
 
     var selectedStationId by remember { mutableStateOf<String?>(null) }
     var showStationSheet by remember { mutableStateOf(false) }
 
     val selectedStation = selectedStationId?.let { id ->
-        uiState.stations.find { it.id == id }
+        building.stations.find { it.id == id }
     }
 
-    // === GAME LOOP con withFrameNanos (sincronizado al display, 60 FPS) ===
+    // === GAME LOOP (withFrameNanos → 60 FPS) ===
     LaunchedEffect(Unit) {
         var lastFrameTime = 0L
         while (true) {
@@ -66,16 +74,15 @@ fun GameScreen(
                 }
                 val deltaTime = (frameTimeNanos - lastFrameTime) / 1_000_000_000f
                 lastFrameTime = frameTimeNanos
-
                 viewModel.updateGame(deltaTime)
             }
         }
     }
 
-    // Pantalla de prestigio
-    if (uiState.showPrestigeScreen) {
+    // Pantalla de prestigio (overlay completo)
+    if (uiFlags.showPrestigeScreen) {
         PrestigeScreen(
-            prestige = uiState.prestige,
+            prestige = building.prestige,
             canPrestige = viewModel.canPrestige(),
             tokensToEarn = viewModel.getPrestigeTokensToEarn(),
             onConfirm = { viewModel.performPrestige() },
@@ -93,11 +100,13 @@ fun GameScreen(
                 )
             )
     ) {
+        // === MAPA: solo se recompone con dynamic + building ===
         MapCanvas(
-            characterState = uiState.character,
-            stations = uiState.stations,
-            floatingBonuses = uiState.floatingBonuses,
-            airplaneX = uiState.airplaneX,
+            characterState = dynamic.character,
+            stations = building.stations,
+            floatingBonuses = dynamic.floatingBonuses,
+            airplaneX = dynamic.airplaneX,
+            bonusProgress = dynamic.bonusProgress,
             textMeasurer = textMeasurer,
             onMapTap = { x, y -> viewModel.onMapClicked(x, y) },
             onStationTap = { station ->
@@ -108,10 +117,11 @@ fun GameScreen(
             }
         )
 
+        // === HUD: solo se recompone con economy ===
         HudOverlay(
-            money = uiState.money,
-            earnPerSec = uiState.totalEarnPerSec,
-            prestigeTokens = uiState.prestige.tokens,
+            money = economy.money,
+            earnPerSec = economy.totalEarnPerSec,
+            prestigeTokens = building.prestige.tokens,
             canPrestige = viewModel.canPrestige(),
             onUpgradesClick = { viewModel.toggleUpgradesSheet() },
             onPrestigeClick = { viewModel.togglePrestigeScreen() },
@@ -119,16 +129,18 @@ fun GameScreen(
         )
     }
 
-    if (uiState.showOfflineDialog) {
+    // Diálogo offline
+    if (uiFlags.showOfflineDialog) {
         OfflineEarningsDialog(
-            earnings = uiState.offlineEarnings,
+            earnings = uiFlags.offlineEarnings,
             onDismiss = { viewModel.dismissOfflineDialog() }
         )
     }
 
+    // === PANEL de estación con graphicsLayer slide-up ===
     if (showStationSheet && selectedStation != null) {
         val station = selectedStation!!
-        val canAfford = uiState.money >= station.upgradeCost
+        val canAfford = economy.money >= station.upgradeCost
 
         ModalBottomSheet(
             onDismissRequest = {
@@ -138,23 +150,37 @@ fun GameScreen(
             sheetState = rememberModalBottomSheetState(),
             containerColor = DarkSurface
         ) {
-            StationUpgradePanel(
-                station = station,
-                canAfford = canAfford,
-                onUpgradeClick = {
-                    Log.d("GAME_DEBUG", "GameScreen: Button clicked → upgradeStation(${station.id})")
-                    viewModel.upgradeStation(station.id)
-                    showStationSheet = false
-                    selectedStationId = null
-                }
+            // graphicsLayer evita recomposición del contenido durante animación
+            val panelAlpha by animateFloatAsState(
+                targetValue = 1f,
+                animationSpec = tween(250),
+                label = "panelAlpha"
             )
+
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    alpha = panelAlpha
+                }
+            ) {
+                StationUpgradePanel(
+                    station = station,
+                    canAfford = canAfford,
+                    onUpgradeClick = {
+                        Log.d("GAME_DEBUG", "Button clicked → upgradeStation(${station.id})")
+                        viewModel.upgradeStation(station.id)
+                        showStationSheet = false
+                        selectedStationId = null
+                    }
+                )
+            }
         }
     }
 
-    if (uiState.showUpgradesSheet) {
+    // Bottom sheet mejoras globales
+    if (uiFlags.showUpgradesSheet) {
         UpgradesSheet(
-            upgrades = uiState.upgrades,
-            money = uiState.money,
+            upgrades = building.upgrades,
+            money = economy.money,
             onPurchase = { upgradeId -> viewModel.purchaseUpgrade(upgradeId) },
             onDismiss = { viewModel.toggleUpgradesSheet() }
         )
